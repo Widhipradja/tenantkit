@@ -21,6 +21,15 @@ tenantkit.Unscoped(db).Find(&rows)
 tenantkit.ViaParent(db).Where("debt_id = ?", debt.ID).Find(&payments)
 ```
 
+Child tables that are tenant-owned only through a parent row (join tables, line items) get their
+own `tenant_id`, filled from the parent, with one call at startup after AutoMigrate:
+
+```go
+tenantkit.BackfillFromParent(db, []tenantkit.ChildTable{
+    {Table: "sys_user_roles", Parent: "sys_users", On: "p.id = c.user_id", Model: &domain.UserRole{}},
+})
+```
+
 Rollout per service: `off` -> `log` (read the `[tenantkit]` lines: each is a call site missing a
 scope) -> fix those -> `on`. `tenantkit.TablesMissingTenantColumn(db)` lists tables still needing
 a `tenant_id` column. Raw SQL (`Raw`/`Exec`) and the joined side of `Joins()` are not scoped.

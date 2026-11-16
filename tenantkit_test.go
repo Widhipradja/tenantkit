@@ -245,3 +245,47 @@ func TestViaParentSkipsTheGuard(t *testing.T) {
 		t.Fatalf("ViaParent read: n=%d err=%v", len(lines), err)
 	}
 }
+
+// NoteLine is a child table that gets its tenant from its parent invoice.
+type NoteLine struct {
+	ID        uint   `gorm:"primaryKey"`
+	TenantID  string `gorm:"type:varchar(100);index;default:''"`
+	InvoiceID uint
+}
+
+func TestBackfillFromParent(t *testing.T) {
+	db := open(t, tenantkit.ModeOff) // seeds invoices: id 1,2 -> A, 3 -> B, 4 -> default, 5 -> '' (empty)
+	if err := db.Migrator().DropTable(&NoteLine{}); err != nil {
+		t.Fatal(err)
+	}
+	// a pre-tenant_id child table: created without the column, then given rows
+	db.Exec("CREATE TABLE note_lines (id INT AUTO_INCREMENT PRIMARY KEY, invoice_id INT)")
+	db.Exec("INSERT INTO note_lines (invoice_id) VALUES (1), (3), (5)")
+	specs := []tenantkit.ChildTable{{Table: "note_lines", Parent: "invoices", On: "p.id = c.invoice_id", Model: &NoteLine{}}}
+
+	for i := 0; i < 2; i++ { // second run must be a no-op
+		if err := tenantkit.BackfillFromParent(db, specs); err != nil {
+			t.Fatalf("run %d: %v", i+1, err)
+		}
+	}
+	if !db.Migrator().HasColumn(&NoteLine{}, "tenant_id") || !db.Migrator().HasIndex(&NoteLine{}, "idx_note_lines_tenant_id") {
+		t.Fatal("column or index was not added")
+	}
+	want := map[uint]string{1: A, 3: B, 5: ""} // invoice 5's parent has no tenant: child left empty
+	for inv, tenant := range want {
+		var got string
+		db.Raw("SELECT COALESCE(tenant_id,'') FROM note_lines WHERE invoice_id = ?", inv).Scan(&got)
+		if got != tenant {
+			t.Errorf("invoice %d line: tenant_id=%q want %q", inv, got, tenant)
+		}
+	}
+	db.Exec("UPDATE note_lines SET tenant_id = 'KEEP' WHERE invoice_id = 1")
+	if err := tenantkit.BackfillFromParent(db, specs); err != nil {
+		t.Fatal(err)
+	}
+	var kept string
+	db.Raw("SELECT tenant_id FROM note_lines WHERE invoice_id = 1").Scan(&kept)
+	if kept != "KEEP" {
+		t.Errorf("backfill overwrote an existing tenant_id: %q", kept)
+	}
+}
