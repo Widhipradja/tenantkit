@@ -16,6 +16,9 @@ db.WithContext(c.Request.Context()).Find(&rows)
 
 // deliberate cross-tenant work (migrations, cron, platform admin)
 tenantkit.Unscoped(db).Find(&rows)
+
+// child rows of a parent you already fetched through a tenant scope
+tenantkit.ViaParent(db).Where("debt_id = ?", debt.ID).Find(&payments)
 ```
 
 Rollout per service: `off` -> `log` (read the `[tenantkit]` lines: each is a call site missing a

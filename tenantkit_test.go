@@ -234,3 +234,14 @@ func TestAuditAndEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestViaParentSkipsTheGuard(t *testing.T) {
+	db := open(t, tenantkit.ModeOn)
+	var lines []Line
+	if err := db.Find(&lines).Error; !errors.Is(err, tenantkit.ErrTenantRequired) {
+		t.Fatalf("unscoped read should be rejected, err=%v", err)
+	}
+	if err := tenantkit.ViaParent(db).Where("invoice_id = ?", 1).Find(&lines).Error; err != nil || len(lines) != 2 {
+		t.Fatalf("ViaParent read: n=%d err=%v", len(lines), err)
+	}
+}

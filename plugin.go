@@ -30,6 +30,13 @@ func Scope(tenantID string) func(*gorm.DB) *gorm.DB {
 // admin). Every use is a place a reviewer should look at.
 func Unscoped(db *gorm.DB) *gorm.DB { return db.Set(settingSkip, true) }
 
+// ViaParent marks a child-table lookup whose parent row was already fetched through a tenant
+// scope, so the child ids it uses cannot belong to another tenant (e.g. the payments of a debt
+// that was just loaded with the caller's scope). It behaves like Unscoped but says why, so a
+// reviewer can tell it apart from genuinely global work. Do not use it with an id that came
+// straight from the request.
+func ViaParent(db *gorm.DB) *gorm.DB { return db.Set(settingSkip, true) }
+
 type plugin struct {
 	mode Mode
 	seen sync.Map // call sites already logged
